@@ -151,19 +151,19 @@ class Learner(object):
 
 
     def load_confirmed(self, country):
-        df = pd.read_csv('data/time_series_19-covid-Confirmed-country.csv')
+        df = pd.read_csv('3-11/time_series_19-covid-Confirmed-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
 
 
     def load_recovered(self, country):
-        df = pd.read_csv('data/time_series_19-covid-Recovered-country.csv')
+        df = pd.read_csv('3-11/time_series_19-covid-Recovered-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
 
 
     def load_dead(self, country):
-        df = pd.read_csv('data/time_series_19-covid-Deaths-country.csv')
+        df = pd.read_csv('3-11/time_series_19-covid-Deaths-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
     
@@ -199,7 +199,7 @@ class Learner(object):
         print(optimal)
         beta, gamma = optimal.x
         new_index, extended_actual, extended_recovered, extended_death, prediction = self.predict(beta, gamma, data, recovered, death, self.country, self.s_0, self.i_0, self.r_0)
-        df = pd.DataFrame({'Infected data': extended_actual, 'Recovered data': extended_recovered, 'Death data': extended_death, 'Susceptible': prediction.y[0], 'Infected': prediction.y[1], 'Recovered': prediction.y[2]}, index=new_index)
+        df = pd.DataFrame({'Confirmed data': extended_actual, 'Recovered data': extended_recovered, 'Death data': extended_death, 'Susceptible Prediction': prediction.y[0], 'Confirmed Prediction': prediction.y[1], 'Recovered Prediction': prediction.y[2]}, index=new_index)
         fig, ax = plt.subplots(figsize=(15, 10))
         ax.set_title(self.country)
         df.plot(ax=ax)
@@ -230,9 +230,9 @@ def main():
         data_d = load_json("./data_url.json")
         download_data(data_d)
 
-    sumCases_province('data/time_series_19-covid-Confirmed.csv', 'data/time_series_19-covid-Confirmed-country.csv')
-    sumCases_province('data/time_series_19-covid-Recovered.csv', 'data/time_series_19-covid-Recovered-country.csv')
-    sumCases_province('data/time_series_19-covid-Deaths.csv', 'data/time_series_19-covid-Deaths-country.csv')
+    sumCases_province('3-11/time_series_19-covid-Confirmed.csv', '3-11/time_series_19-covid-Confirmed-country.csv')
+    sumCases_province('3-11/time_series_19-covid-Recovered.csv', '3-11/time_series_19-covid-Recovered-country.csv')
+    sumCases_province('3-11/time_series_19-covid-Deaths.csv', '3-11/time_series_19-covid-Deaths-country.csv')
 
     for country in countries:
         learner = Learner(country, loss, startdate, predict_range, s_0, i_0, r_0)
