@@ -155,18 +155,30 @@ class Learner(object):
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
 
+    def load_confirmed_may(self, country):
+        df = pd.read_csv('5-2/time_series_19-covid-Confirmed-country.csv')
+        country_df = df[df['Country/Region'] == country]
+        return country_df.iloc[0].loc[self.start_date:]    
 
     def load_recovered(self, country):
         df = pd.read_csv('3-11/time_series_19-covid-Recovered-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
 
+    def load_recovered_may(self, country):
+        df = pd.read_csv('5/2/time_series_19-covid-Recovered-country.csv')
+        country_df = df[df['Country/Region'] == country]
+        return country_df.iloc[0].loc[self.start_date:]
 
     def load_dead(self, country):
         df = pd.read_csv('3-11/time_series_19-covid-Deaths-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
     
+    def load_dead_may(self, country):
+        df = pd.read_csv('5/2/time_series_19-covid-Deaths-country.csv')
+        country_df = df[df['Country/Region'] == country]
+        return country_df.iloc[0].loc[self.start_date:] 
 
     def extend_index(self, index, new_size):
         values = index.values
@@ -176,14 +188,16 @@ class Learner(object):
             values = np.append(values, datetime.strftime(current, '%m/%d/%y'))
         return values
 
-    def predict(self, beta, gamma, data, recovered, death, country, s_0, i_0, r_0):
+    def predict(self, beta, gamma, data, recovered, death, data_may, recovered_may, death_may, recocountry, s_0, i_0, r_0):
         new_index = self.extend_index(data.index, self.predict_range)
         size = len(new_index)
+        print(size)
+        print(data.values) # this is confirmed
         def SIR(t, y):
             S = y[0]
             I = y[1]
             R = y[2]
-            return [-beta*S*I, beta*S*I-gamma*I, gamma*I]
+            return [-beta*S*I, beta*S*I-gamma*I, gamma*I] # formulas 
         extended_actual = np.concatenate((data.values, [None] * (size - len(data.values))))
         extended_recovered = np.concatenate((recovered.values, [None] * (size - len(recovered.values))))
         extended_death = np.concatenate((death.values, [None] * (size - len(death.values))))
