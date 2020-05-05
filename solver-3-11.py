@@ -13,6 +13,7 @@ import json
 import ssl
 import urllib.request
 
+# 2-13 13 confirmed, recovered = 3 
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -53,7 +54,7 @@ def parse_arguments():
         help='Days to predict with the model. Defaults to 150',
         metavar='PREDICT_RANGE',
         type=int,
-        default=128) # predicted days that the coronavirus will last, 200 days is 6 months 
+        default=220) # predicted days that the coronavirus will last, 200 days is 6 months 
 
     parser.add_argument(
         '--S_0', # Suspectible indivuals
@@ -62,7 +63,7 @@ def parse_arguments():
         help='S_0. Defaults to 100000',
         metavar='S_0',
         type=int,
-        default=1000000) # Asymptotes the amount of susceptible indivuals at this number
+        default=2000000) # Asymptotes the amount of susceptible indivuals at this number
         # According to NYTimes worst-case scenario projections www.nytimes.com/2020/03/13/us/coronavirus-deaths-estimate.html
 
     parser.add_argument(
@@ -185,7 +186,6 @@ class Learner(object):
         size = len(new_index)
         def SIR(t, y):
             S = y[0]
-            print(y[0])
             I = y[1]
             R = y[2]
             return [-beta*S*I, beta*S*I-gamma*I, gamma*I]
@@ -200,15 +200,17 @@ class Learner(object):
         death = self.load_dead(self.country)
         data = (self.load_confirmed(self.country) - recovered - death)
         
+
         optimal = minimize(loss, [0.001, 0.001], args=(data, recovered, self.s_0, self.i_0, self.r_0), method='L-BFGS-B', bounds=[(0.00000001, 0.4), (0.00000001, 0.4)])
-        print(optimal)
+        print("OPTIMAL:")
+        #print(optimal.x)
         beta, gamma = optimal.x
         new_index, extended_actual, extended_recovered, extended_death, prediction = self.predict(beta, gamma, data, recovered, death, self.country, self.s_0, self.i_0, self.r_0)
         df = pd.DataFrame({'Confirmed data': extended_actual, 'Recovered data': extended_recovered, 'Death data': extended_death, 'Susceptible Prediction': prediction.y[0], 'Confirmed Prediction': prediction.y[1], 'Recovered Prediction': prediction.y[2]}, index=new_index)
         fig, ax = plt.subplots(figsize=(15, 10))
         ax.set_title(self.country)
         df.plot(ax=ax)
-        print(f"country={self.country}, beta={beta:.8f}, gamma={gamma:.8f}, r_0:{(beta/gamma):.8f}")
+        print(f"country={self.country}, beta={beta:.32f}, gamma={gamma:.32f}, r_0:{(beta/gamma):.32f}")
         fig.savefig(f"{self.country}.png")
 
 

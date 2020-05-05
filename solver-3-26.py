@@ -13,6 +13,7 @@ import json
 import ssl
 import urllib.request
 
+# 2-13 13 confirmed, recovered = 3 
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -53,7 +54,7 @@ def parse_arguments():
         help='Days to predict with the model. Defaults to 150',
         metavar='PREDICT_RANGE',
         type=int,
-        default=200) # predicted days that the coronavirus will last, 200 days is 6 months 
+        default=220) # predicted days that the coronavirus will last, 200 days is 6 months 
 
     parser.add_argument(
         '--S_0', # Suspectible indivuals
@@ -62,7 +63,7 @@ def parse_arguments():
         help='S_0. Defaults to 100000',
         metavar='S_0',
         type=int,
-        default=10000000) # Asymptotes the amount of susceptible indivuals at this number
+        default=500000) # Asymptotes the amount of susceptible indivuals at this number
         # According to NYTimes worst-case scenario projections www.nytimes.com/2020/03/13/us/coronavirus-deaths-estimate.html
 
     parser.add_argument(
@@ -73,7 +74,7 @@ def parse_arguments():
         help='I_0. Defaults to 2',
         metavar='I_0',
         type=int,
-        default=2)
+        default=10)
 
     parser.add_argument(
         # this argument is for the recovered indivuals compartment 
@@ -83,7 +84,7 @@ def parse_arguments():
         help='R_0. Defaults to 0',
         metavar='R_0',
         type=int,
-        default=10)
+        default=2)
 
     args = parser.parse_args()
 
@@ -144,8 +145,9 @@ def load_json(json_file_str):
 
 
 class Learner(object):
-    def __init__(self, country, start_date, predict_range,s_0, i_0, r_0):
+    def __init__(self, country, loss, start_date, predict_range,s_0, i_0, r_0):
         self.country = country
+        self.loss = loss
         self.start_date = start_date
         self.predict_range = predict_range
         self.s_0 = s_0
@@ -154,19 +156,19 @@ class Learner(object):
 
 
     def load_confirmed(self, country):
-        df = pd.read_csv('5-2/time_series-covid19-Confirmed.csv')
+        df = pd.read_csv('3-26/time_series_19-covid-Confirmed-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
 
 
     def load_recovered(self, country):
-        df = pd.read_csv('5-2/time_series-covid19-Recovered.csv')
+        df = pd.read_csv('3-26/time_series_19-covid-Recovered-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
 
 
     def load_dead(self, country):
-        df = pd.read_csv('5-2/time_series-covid19-Deaths.csv')
+        df = pd.read_csv('3-26/time_series_19-covid-Deaths-country.csv')
         country_df = df[df['Country/Region'] == country]
         return country_df.iloc[0].loc[self.start_date:]
     
@@ -178,31 +180,54 @@ class Learner(object):
             current = current + timedelta(days=1)
             values = np.append(values, datetime.strftime(current, '%m/%d/%y'))
         return values
-    
-    def predict(self, data, recovered, death, country, s_0, i_0, r_0):
+
+    def predict(self, beta, gamma, data, recovered, death, country, s_0, i_0, r_0):
         new_index = self.extend_index(data.index, self.predict_range)
         size = len(new_index)
+        def SIR(t, y):
+            S = y[0]
+            I = y[1]
+            R = y[2]
+            return [-beta*S*I, beta*S*I-gamma*I, gamma*I]
         extended_actual = np.concatenate((data.values, [None] * (size - len(data.values))))
         extended_recovered = np.concatenate((recovered.values, [None] * (size - len(recovered.values))))
         extended_death = np.concatenate((death.values, [None] * (size - len(death.values))))
-        return new_index, extended_actual, extended_recovered, extended_death
+        return new_index, extended_actual, extended_recovered, extended_death, solve_ivp(SIR, [0, size], [s_0,i_0,r_0], t_eval=np.arange(0, size, 1))
+
 
     def train(self):
         recovered = self.load_recovered(self.country)
         death = self.load_dead(self.country)
         data = (self.load_confirmed(self.country) - recovered - death)
         
-        #optimal = minimize(loss, [0.001, 0.001], args=(data, recovered, self.s_0, self.i_0, self.r_0), method='L-BFGS-B', bounds=[(0.00000001, 0.4), (0.00000001, 0.4)])
-        #print(optimal)
-        #beta, gamma = optimal.x
-        extended_actual = self.predict(data, recovered, death, self.country, self.s_0, self.r_0)
-        #extended_actual, extended_recovered, extended_death = self.predict(data, recovered, death, self.country, self.s_0, self.i_0, self.r_0)
-        df = pd.DataFrame({'Confirmed data': extended_actual, 'Recovered data': extended_recovered, 'Death data': extended_death}, index=new_index)
+
+        optimal = minimize(loss, [0.001, 0.001], args=(data, recovered, self.s_0, self.i_0, self.r_0), method='L-BFGS-B', bounds=[(0.00000001, 0.4), (0.00000001, 0.4)])
+        print("OPTIMAL:")
+        print(optimal.x)
+        beta, gamma = optimal.x
+        new_index, extended_actual, extended_recovered, extended_death, prediction = self.predict(beta, gamma, data, recovered, death, self.country, self.s_0, self.i_0, self.r_0)
+        df = pd.DataFrame({'Confirmed data': extended_actual, 'Recovered data': extended_recovered, 'Death data': extended_death, 'Susceptible Prediction': prediction.y[0], 'Confirmed Prediction': prediction.y[1], 'Recovered Prediction': prediction.y[2]}, index=new_index)
         fig, ax = plt.subplots(figsize=(15, 10))
         ax.set_title(self.country)
         df.plot(ax=ax)
-        # print(f"country={self.country}, beta={beta:.8f}, gamma={gamma:.8f}, r_0:{(beta/gamma):.8f}")
+        print(f"country={self.country}, beta={beta:.32f}, gamma={gamma:.32f}, r_0:{(beta/gamma):.32f}")
         fig.savefig(f"{self.country}.png")
+
+
+def loss(point, data, recovered, s_0, i_0, r_0):
+    size = len(data)
+    beta, gamma = point
+    def SIR(t, y):
+        S = y[0]
+        I = y[1]
+        R = y[2]
+        return [-beta*S*I, beta*S*I-gamma*I, gamma*I]
+    solution = solve_ivp(SIR, [0, size], [s_0,i_0,r_0], t_eval=np.arange(0, size, 1), vectorized=True)
+    l1 = np.sqrt(np.mean((solution.y[1] - data)**2))
+    l2 = np.sqrt(np.mean((solution.y[2] - recovered)**2))
+    alpha = 0.1
+    return alpha * l1 + (1 - alpha) * l2
+
 
 def main():
 
@@ -212,12 +237,12 @@ def main():
         data_d = load_json("./data_url.json")
         download_data(data_d)
 
-    sumCases_province('5-2/time_series-covid19-Confirmed.csv', '3-11/time_series_19-covid-Confirmed-country.csv')
-    sumCases_province('5-2/time_series-covid19-Recovered.csv', '3-11/time_series_19-covid-Recovered-country.csv')
-    sumCases_province('5-2/time_series-covid19-Deaths.csv', '3-11/time_series_19-covid-Deaths-country.csv')
+    sumCases_province('3-26/time_series_19-covid-Confirmed.csv', '3-26/time_series_19-covid-Confirmed-country.csv')
+    sumCases_province('3-26/time_series_19-covid-Recovered.csv', '3-26/time_series_19-covid-Recovered-country.csv')
+    sumCases_province('3-26/time_series_19-covid-Deaths.csv', '3-26/time_series_19-covid-Deaths-country.csv')
 
     for country in countries:
-        learner = Learner(country, startdate, predict_range, s_0, i_0, r_0)
+        learner = Learner(country, loss, startdate, predict_range, s_0, i_0, r_0)
         #try:
         learner.train()
         #except BaseException:
