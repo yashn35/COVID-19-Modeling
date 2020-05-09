@@ -54,7 +54,7 @@ def parse_arguments():
         help='Days to predict with the model. Defaults to 150',
         metavar='PREDICT_RANGE',
         type=int,
-        default=220) # predicted days that the coronavirus will last, 200 days is 6 months 
+        default=300) # predicted days that the coronavirus will last, 200 days is 6 months 
 
     parser.add_argument(
         '--S_0', # Suspectible indivuals
@@ -63,8 +63,7 @@ def parse_arguments():
         help='S_0. Defaults to 100000',
         metavar='S_0',
         type=int,
-        default=2000000) # Asymptotes the amount of susceptible indivuals at this number
-        # According to NYTimes worst-case scenario projections www.nytimes.com/2020/03/13/us/coronavirus-deaths-estimate.html
+        default=1000000) # Asymptotes the amount of susceptible indivuals at this number
 
     parser.add_argument(
         # this argument is for the infected indivuals compartment
@@ -74,7 +73,7 @@ def parse_arguments():
         help='I_0. Defaults to 2',
         metavar='I_0',
         type=int,
-        default=10)
+        default=1)
 
     parser.add_argument(
         # this argument is for the recovered indivuals compartment 
@@ -84,7 +83,7 @@ def parse_arguments():
         help='R_0. Defaults to 0',
         metavar='R_0',
         type=int,
-        default=50)
+        default=0)
 
     args = parser.parse_args()
 
@@ -173,6 +172,11 @@ class Learner(object):
         return country_df.iloc[0].loc[self.start_date:]
     
 
+    def load_comparison(self, country):
+        df = pd.read_csv('5-2/time_series-covid19-Confirmed.csv')
+        country_df = df[df['Country/Region'] == country]
+        return country_df.iloc[0].loc[self.start_date:]
+
     def extend_index(self, index, new_size):
         values = index.values
         current = datetime.strptime(index[-1], '%m/%d/%y')
@@ -184,6 +188,8 @@ class Learner(object):
     def predict(self, beta, gamma, data, recovered, death, country, s_0, i_0, r_0):
         new_index = self.extend_index(data.index, self.predict_range)
         size = len(new_index)
+        print (beta)
+        print (gamma)
         def SIR(t, y):
             S = y[0]
             I = y[1]
@@ -198,19 +204,52 @@ class Learner(object):
     def train(self):
         recovered = self.load_recovered(self.country)
         death = self.load_dead(self.country)
+        recovered = recovered + death
         data = (self.load_confirmed(self.country) - recovered - death)
+        comparison = self.load_comparison(self.country)
+        print(comparison)
         
 
-        optimal = minimize(loss, [0.001, 0.001], args=(data, recovered, self.s_0, self.i_0, self.r_0), method='L-BFGS-B', bounds=[(0.00000001, 0.4), (0.00000001, 0.4)])
+        optimal = minimize(loss, [0.25e-05, 0.1], args=(data, recovered, self.s_0, self.i_0, self.r_0), method='L-BFGS-B', bounds=[(1e-16, 0.4), (0.001, 0.4)])
+    
         print("OPTIMAL:")
-        #print(optimal.x)
+        #print(self.load_confirmed(self.country))
+        print(optimal.x)
         beta, gamma = optimal.x
-        new_index, extended_actual, extended_recovered, extended_death, prediction = self.predict(beta, gamma, data, recovered, death, self.country, self.s_0, self.i_0, self.r_0)
-        df = pd.DataFrame({'Confirmed data': extended_actual, 'Recovered data': extended_recovered, 'Death data': extended_death, 'Susceptible Prediction': prediction.y[0], 'Confirmed Prediction': prediction.y[1], 'Recovered Prediction': prediction.y[2]}, index=new_index)
+        my_beta = (0.25 / self.s_0)
+        my_gamma = 1/16
+
+      #  beta = 0.25 / self.s_0
+      #  gamma = 1/16
+
+
+        print(my_beta, my_gamma)
+    
+        total_population = 328e+06
+        normalized_beta = beta * self.s_0 / total_population
+        
+        new_index, extended_actual, extended_recovered, extended_death, prediction = self.predict(normalized_beta, gamma, data, recovered, death, self.country, total_population, self.i_0, self.r_0)
+        
+        
+        extended_comparison = np.concatenate((comparison.values, [None] * (len(new_index) - len(comparison.values))))
+        df = pd.DataFrame({'Confirmed Data Used for Model Training': extended_actual, 'Recovered Data Used for Model Training': extended_recovered, 'Death Data Used for Model Training': extended_death, 'Susceptible Prediction': prediction.y[0], 'Infectious Prediction': prediction.y[1], 'Recovered Prediction': prediction.y[2], 'May 2nd Data': extended_comparison}, index=new_index)
+        #df = pd.DataFrame({'Confirmed Data Used for Model Training': extended_actual, 'Infectious Prediction': prediction.y[1]}, index=new_index)
+        #df = pd.DataFrame({'Confirmed Data Used for Model Training': extended_actual, 'Infectious Prediction': prediction.y[1], 'May 2nd Data': extended_comparison}, index=new_index)
+        # df = pd.DataFrame({'Confirmed data': extended_actual, 'Infectious Prediction': prediction.y[1], 'May 2nd': extended_comparison}, index=new_index)
+      
+
+       
+        #df = pd.DataFrame({'May 2nd Data': extended_comparison}, index=new_index)
         fig, ax = plt.subplots(figsize=(15, 10))
+
         ax.set_title(self.country)
-        df.plot(ax=ax)
-        print(f"country={self.country}, beta={beta:.32f}, gamma={gamma:.32f}, r_0:{(beta/gamma):.32f}")
+
+        ax.set(xlabel="Date", ylabel="# of cases")
+
+        df.plot(ax=ax, title=f"United States: beta={beta:.8f}, gamma={gamma:.8f}, r_0={(beta/gamma) * self.s_0:.8f}")
+
+        
+        print(f"country={self.country}, beta={beta:.32f}, gamma={gamma:.32f}, r_0:{(beta/gamma) * self.s_0:.32f}")
         fig.savefig(f"{self.country}.png")
 
 
@@ -242,9 +281,12 @@ def main():
     sumCases_province('3-11/time_series_19-covid-Deaths.csv', '3-11/time_series_19-covid-Deaths-country.csv')
 
     for country in countries:
+        print (country)
         learner = Learner(country, loss, startdate, predict_range, s_0, i_0, r_0)
         #try:
+
         learner.train()
+
         #except BaseException:
         #    print('WARNING: Problem processing ' + str(country) +
         #        '. Be sure it exists in the data exactly as you entry it.' +
