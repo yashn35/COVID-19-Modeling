@@ -54,7 +54,7 @@ def parse_arguments():
         help='Days to predict with the model. Defaults to 150',
         metavar='PREDICT_RANGE',
         type=int,
-        default=300) # predicted days that the coronavirus will last, 200 days is 6 months 
+        default=370) # predicted days that the coronavirus will last, 200 days is 6 months 
 
     parser.add_argument(
         '--S_0', # Suspectible indivuals
